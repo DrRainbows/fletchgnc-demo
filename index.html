@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FletchGNC - Guided Bolt Simulator</title>
+    <meta name="description" content="6-DOF guided crossbow bolt flight simulator with proportional navigation guidance, 9-state extended Kalman filter, and real-time trajectory visualization.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Inline critical styles for loading screen (shown before CSS loads) -->
+    <style>
+        #loading-screen {
+            position: fixed;
+            inset: 0;
+            background: #060a10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.4s ease-out;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        #loading-screen.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #loading-screen .load-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #00d4ff;
+            letter-spacing: 6px;
+            margin-bottom: 8px;
+        }
+        #loading-screen .load-subtitle {
+            font-size: 11px;
+            color: #3a5070;
+            letter-spacing: 2px;
+            margin-bottom: 32px;
+        }
+        #loading-screen .load-bar-track {
+            width: 240px;
+            height: 2px;
+            background: #1a2535;
+            position: relative;
+            overflow: hidden;
+        }
+        #loading-screen .load-bar-fill {
+            position: absolute;
+            top: 0; left: -50%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, #00d4ff, transparent);
+            animation: load-sweep 1.2s ease-in-out infinite;
+        }
+        @keyframes load-sweep {
+            0% { left: -50%; }
+            100% { left: 100%; }
+        }
+        #loading-screen .load-systems {
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 9px;
+            color: #2a4060;
+            letter-spacing: 1px;
+        }
+        #loading-screen .load-systems span.ready {
+            color: #30e060;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="load-title">FLETCHGNC</div>
+        <div class="load-subtitle">GUIDED BOLT SIMULATION SYSTEM</div>
+        <div class="load-bar-track">
+            <div class="load-bar-fill"></div>
+        </div>
+        <div class="load-systems">
+            <span id="load-physics">PHYSICS ENGINE . . .</span>
+            <span id="load-gnc">GNC STACK . . .</span>
+            <span id="load-render">RENDER PIPELINE . . .</span>
+            <span id="load-world">WORLD MODEL . . .</span>
+        </div>
+    </div>
+
+    <!-- Pause Overlay -->
+    <div id="pause-overlay">
+        <div class="pause-text">PAUSED</div>
+        <div class="pause-hint">P to Resume</div>
+    </div>
+
+    <!-- Key Toast -->
+    <div id="key-toast"></div>
+
+    <div id="app">
+        <!-- Header -->
+        <header id="header">
+            <div class="header-left">
+                <h1 class="logo">FLETCHGNC</h1>
+                <span class="version">v2</span>
+                <span class="subtitle">Guided Crossbow Bolt Simulator</span>
+            </div>
+            <div class="header-center">
+                <span id="mode-badge" class="mode-badge">IDLE</span>
+                <span id="armed-badge" class="armed-badge hidden">ARMED</span>
+            </div>
+            <div class="header-right">
+                <span class="tech-badge">6-DOF RK4</span>
+                <span class="tech-badge">PROP-NAV</span>
+                <span class="tech-badge">9-STATE EKF</span>
+                <span id="fps-counter" class="fps-counter">-- FPS</span>
+                <button id="leaderboard-btn" class="header-icon-btn" title="Leaderboard">&#127942;</button>
+                <button id="settings-btn" class="header-icon-btn" title="Settings">&#9881;</button>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Grid -->
+        <main id="dashboard" class="dashboard">
+            <!-- Row 1: Scope + 3D Flight + Telemetry -->
+            <div id="panel-scope" class="panel panel-scope">
+                <canvas></canvas>
+                <div id="replay-bar" class="replay-bar hidden">
+                    <div class="replay-timeline">
+                        <div class="replay-progress"></div>
+                        <div class="replay-cursor"></div>
+                    </div>
+                    <div class="replay-controls">
+                        <button id="replay-step-back" class="replay-btn" title="Step back">&laquo;</button>
+                        <button id="replay-play-pause" class="replay-btn" title="Play/Pause">&#9654;</button>
+                        <button id="replay-step-fwd" class="replay-btn" title="Step forward">&raquo;</button>
+                        <span class="replay-time">0.000s</span>
+                        <span class="replay-info">&larr;&rarr; Scrub | SPACE Play | ESC Exit</span>
+                        <button id="export-btn" class="replay-btn" title="Export flight data">&#8595; JSON</button>
+                        <button id="replay-exit" class="replay-btn replay-btn-exit" title="Exit replay">&times;</button>
+                    </div>
+                </div>
+            </div>
+            <div id="panel-flight3d" class="panel panel-flight3d">
+                <canvas></canvas>
+            </div>
+            <div id="panel-telemetry" class="panel panel-telemetry">
+                <canvas></canvas>
+            </div>
+
+            <!-- Row 2: CG Body + Charts -->
+            <div id="panel-cgbody" class="panel panel-cgbody">
+                <canvas></canvas>
+            </div>
+            <div id="panel-charts" class="panel panel-charts">
+                <canvas></canvas>
+            </div>
+        </main>
+
+        <!-- Status Bar -->
+        <footer id="statusbar">
+            <div class="status-left">
+                <span class="keyhint">ARROWS: Aim</span>
+                <span class="keyhint">SHIFT: Fast</span>
+                <span class="keyhint">1-9: Target</span>
+                <span class="keyhint">A: Arm</span>
+                <span class="keyhint">SPACE: Fire</span>
+                <span class="keyhint">Z: Zone</span>
+                <span class="keyhint">R: Reset</span>
+                <span class="keyhint">F: Focus</span>
+                <span class="keyhint">P: Pause</span>
+                <span class="keyhint">H: Help</span>
+                <span class="keyhint" id="touch-hint" style="display:none">TAP:Fire | PINCH:Zoom | HOLD:Arm</span>
+            </div>
+            <div class="status-right">
+                <span id="shot-counter" class="shot-counter">0/0</span>
+                <span id="sim-rate" class="sim-rate">1000 Hz</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="side-panel hidden">
+        <div class="side-panel-header">
+            <span>SETTINGS</span>
+            <button class="side-panel-close" id="settings-close">&times;</button>
+        </div>
+        <div class="side-panel-body">
+            <label class="setting-row">
+                <span class="setting-label">WIND SPEED</span>
+                <input type="range" id="setting-wind-speed" min="0" max="15" step="0.1" value="0">
+                <span class="setting-value" id="setting-wind-speed-val">0.0 m/s</span>
+            </label>
+            <label class="setting-row">
+                <span class="setting-label">WIND DIRECTION</span>
+                <input type="range" id="setting-wind-dir" min="0" max="360" step="1" value="0">
+                <span class="setting-value" id="setting-wind-dir-val">0&deg;</span>
+            </label>
+            <label class="setting-row">
+                <span class="setting-label">GUST INTENSITY</span>
+                <input type="range" id="setting-gust" min="0" max="3" step="0.05" value="0">
+                <span class="setting-value" id="setting-gust-val">0.00</span>
+            </label>
+            <button id="setting-randomize-wind" class="setting-btn">RANDOMIZE WIND</button>
+        </div>
+    </div>
+
+    <!-- Leaderboard Panel -->
+    <div id="leaderboard-panel" class="side-panel hidden">
+        <div class="side-panel-header">
+            <span>LEADERBOARD</span>
+            <button class="side-panel-close" id="leaderboard-close">&times;</button>
+        </div>
+        <div class="side-panel-body" id="leaderboard-body">
+            <div class="lb-empty">No shots recorded yet.</div>
+        </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
